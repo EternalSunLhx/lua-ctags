@@ -12,7 +12,7 @@ source = {
    url = "git+https://github.com/" .. github_account_name .. "/" .. github_repo_name .. ".git"
 }
 
-if package_version == "dev" then source.branch = "master" else source.tag = "v" .. package_version end
+if package_version == "dev" then source.branch = "main" else source.tag = "v" .. package_version end
 
 description = {
    summary = "A ctags for Lua",
@@ -49,7 +49,7 @@ build = {
    },
    install = {
       bin = {
-         lua-ctags = "bin/lua-ctags.lua"
+         ["lua-ctags"] = "bin/lua-ctags.lua"
       }
    }
 }
