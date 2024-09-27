@@ -1,0 +1,14 @@
+.luacheckcache
+luacov.stats.out
+luacov.report.out
+doc
+*.rock
+!build/
+build/*
+!build/Makefile
+!build/bin
+build/bin/*
+!build/bin/lua-ctags.lua
+package
+scripts/UnicodeData-*
+docsrc/.doctrees

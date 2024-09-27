@@ -1,0 +1,9 @@
+-- { function_name = args_index }
+module_define = { 
+    moduleDef = 1,
+    moduleStartDef = 2,
+}
+
+class_define = {
+
+}
