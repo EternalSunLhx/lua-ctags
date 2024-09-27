@@ -68,7 +68,7 @@ $(TARGET): $(LUA_A) $(LFS_A)
 	cp $(ARGPARSE_DIR)/src/argparse.lua .
 	cp -r ../src/lua-ctags .
 	cp -f bin/lua-ctags.lua bin/lua-ctags_bin.lua
-	CC=$(CC) NM=$(NM) RANLIB=$(RANLIB) luastatic bin/lua-ctags_bin.lua lua-ctags/*.lua lua-ctags/*/*.lua lua-ctags/*/*/*.lua argparse.lua $(LUA_A) $(LFS_A) -lm $(if $(LINUX),-lpthread) -I$(LUA_DIR)/src
+	CC=$(CC) NM=$(NM) RANLIB=$(RANLIB) luastatic bin/lua-ctags_bin.lua lua-ctags/*.lua argparse.lua $(LUA_A) $(LFS_A) -lm $(if $(LINUX),-lpthread) -I$(LUA_DIR)/src
 	rm lua-ctags_bin.luastatic.c
 	$(STRIP) lua-ctags_bin*
 	mv lua-ctags_bin* $(TARGET)
