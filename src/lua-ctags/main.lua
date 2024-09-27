@@ -27,15 +27,15 @@ Links:
       :argname "<file>"
 
    parser:group("Input/Output Options",
-      parser:flag("-R --recurse", "Recurse into directories supplied on command line [no]."):action("store_false"),
-      parser:flag("-a --append", "Should tags should be appended to existing tag file [no]?"):action("store_false"),
+      parser:flag("-R --recurse", "Recurse into directories supplied on command line [no]."),
+      parser:flag("-a --append", "Should tags should be appended to existing tag file [no]?"),
       
       parser:option("-f", "Write tags to specified <tagfile>. Value of \"-\" writes tags to stdout\n[\"tags\"; or \"TAGS\" when -e supplied]."):argname "<tagfile>",
       parser:option("--min-var-length", "Specify minmum variable name length. Default: 2"):argname "<max_var_length>":convert(tonumber))
 
    parser:group("Output Format Options",
       parser:option("--output-format", "Specify the output format.(u-ctags|e-ctags|etags|xref|json). Default: e-ctags"):argname "<output_format>":choices { "u-ctags", "e-ctags", "etags", "xref", "json" },
-      parser:option("--sort", "Should tags be sorted (optionally ignoring case) [yes]?":argname "<sort>":choices { "no", "yes", "foldcase" }:init("foldcase")),
+      parser:option("--sort", "Should tags be sorted (optionally ignoring case) [yes]?"):argname "<sort>":choices { "no", "yes", "foldcase" }:init("foldcase"),
       parser:flag("-u", "Equivalent to --sort=no."):target("sort"):init("no"))
 
    parser:option("--options", "Specify file (or directory) <pathname> from which command line options should be read."):argname "<options>"
@@ -54,7 +54,7 @@ local function main()
       os.exit(exit_codes.critical)
    end
 
-   local ok, error_wrapper = utils.try(ctags.generate, args)
+   local ok, error_wrapper = utils.try(ctags.generate_tags, args)
 
    if not ok then
       local msg = ("lua-ctags %s bug (please report at https://github.com/EternalSunLhx/lua-ctags/issues):\n%s\n%s"):format(version.lua_ctags, error_wrapper.err, error_wrapper.traceback)
