@@ -1,5 +1,7 @@
 local ctags_parser = {}
 
+local empty_table = setmetatable({}, { __newindex = function(t, k, v) end })
+
 local function try_parse_block(block, lines, tags_data, module_define, class_define)
     local ctags_parser_handle = ctags_parser[block.tag]
     if ctags_parser_handle == nil then return end
@@ -19,7 +21,10 @@ local function get_var_name(var_block)
     end
 
     if var_block.tag == "Index" then
-        return get_var_name(var_block[1])
+        local var_name_block = var_block[2]
+        if var_name_block.tag == "String" then
+            return var_name_block[1], var_name_block.line
+        end
     end
 end
 
@@ -31,7 +36,7 @@ local function get_var_type(var_value_block)
     return "v"
 end
 
-local function __add_var_define(var_name, var_type)
+local function __add_var_define(lines, tags_data, var_name, var_line, var_type)
     local token_data = tags_data[var_name] or {}
     token_data[lines[var_line]] = var_type
     tags_data[var_name] = token_data
@@ -40,7 +45,7 @@ end
 local function add_var_define(lines, tags_data, var_block, value_block, var_type)
     local var_name, var_line = get_var_name(var_block)
     if var_name ~= nil then
-        __add_var_define(var_name, var_type or get_var_type(value_block))
+        __add_var_define(lines, tags_data, var_name, var_line, var_type or get_var_type(value_block))
     end
 end
 
@@ -52,7 +57,7 @@ ctags_parser["Set"] = function(set_block, lines, tags_data, module_define, class
         local value_block = value_define_block[var_index]
         if value_block ~= nil then
             if value_block.tag == "Function" or value_block.tag == "Table" or value_block.tag == "Op" then
-                try_parse_block(value_block, tags_data, module_define, class_define)
+                try_parse_block(value_block, lines, tags_data, module_define, class_define)
             end
         end
 
@@ -61,7 +66,7 @@ ctags_parser["Set"] = function(set_block, lines, tags_data, module_define, class
 end
 
 ctags_parser["Local"] = function(local_block, lines, tags_data, module_define, class_define)
-    local value_define_block = local_block[2]
+    local value_define_block = local_block[2] or empty_table
     
     for index, var_block in ipairs(local_block[1]) do
         local value_block = value_define_block[index]
@@ -69,16 +74,12 @@ ctags_parser["Local"] = function(local_block, lines, tags_data, module_define, c
         add_var_define(lines, tags_data, var_block, value_block)
 
         if value_block ~= nil and (value_block.tag == "Call" or value_block.tag == "Table") then
-            ctags_parser_handle[value_block.tag](value_block, lines, tags_data, module_define, class_define)
+            ctags_parser[value_block.tag](value_block, lines, tags_data, module_define, class_define)
         end
     end
 end
 
-ctags_parser["Localrec"] = function(localrec_block, lines, tags_data, module_define, class_define)
-    add_var_define(lines, tags_data, localrec_block[1], nil, "f")
-    
-    for_each_block(localrec_block[2], lines, tags_data, module_define, class_define)
-end
+ctags_parser["Localrec"] = ctags_parser["Local"]
 
 ctags_parser["Do"] = function(do_block, lines, tags_data, module_define, class_define)
     for_each_block(do_block, lines, tags_data, module_define, class_define)
@@ -119,8 +120,12 @@ ctags_parser["If"] = function(if_block, lines, tags_data, module_define, class_d
 end
 
 ctags_parser["Pair"] = function(pair_block, lines, tags_data, module_define, class_define)
-    -- key
-    try_parse_block(pair_block[1], lines, tags_data, module_define, class_define)
+    local key_block = pair_block[1]
+    if key_block.tag == "String" then
+        __add_var_define(lines, tags_data, key_block[1], key_block.line, "v")
+    else
+        try_parse_block(key_block, lines, tags_data, module_define, class_define)
+    end
 
     -- value
     try_parse_block(pair_block[2], lines, tags_data, module_define, class_define)
@@ -166,7 +171,7 @@ ctags_parser["Call"] = function(call_block, lines, tags_data, module_define, cla
     if name_index ~= nil then
         local name_arg_block = call_block[name_index + 1]
         if name_arg_block ~= nil and name_arg_block.tag == "String" then
-            __add_var_define(name_arg_block[1], var_type)
+            __add_var_define(lines, tags_data, name_arg_block[1], name_arg_block.line, var_type)
         end
     end
 
