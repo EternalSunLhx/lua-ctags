@@ -1,9 +1,9 @@
-
-
 local parser = require "lua-ctags.parser"
 local decoder = require "lua-ctags.decoder"
 local check_state = require "lua-ctags.check_state"
 local ctags_parser = require "lua-ctags.ctags_parser"
+local utils = require "lua-ctags.utils"
+local fs = require "lua-ctags.fs"
 
 local ctags = {}
 
@@ -13,6 +13,7 @@ local config = {
     recurse = false,
     append = false,
     max_var_length = 2,
+    ignore_token = { ["_"] = true, ["_ENV"] =  true, ["_G"] = true, },
 }
 
 local exist_tags_data = {}
@@ -53,8 +54,19 @@ local function init_files()
     config.files = files
 end
 
+local function fix_split_data(split_data)
+    local size = #split_data
+    if size <= 4 then return end
+
+    split_data[3] = table.concat(split_data, "\t", 3, size - 1)
+    split_data[4] = split_data[size]
+    for idx = 5, size do
+        split_data[idx] = nil
+    end
+end
+
 local function init_exist_tags()
-    local tagfile = fs.abspath(config.tagfile or "tags")
+    local tagfile = fs.abspath(config.f or "tags")
     config.tagfile = tagfile
 
     if not config.append then return end
@@ -65,6 +77,7 @@ local function init_exist_tags()
     for line in file_handle:lines() do
         if not utils.startswith(line, "!") then
             local split_data = utils.split(line, "\t")
+            fix_split_data(split_data)
             if #split_data == 4 then
                 local token = split_data[1]
                 local filepath = split_data[2]
@@ -99,7 +112,8 @@ local function init_args(args)
 end
 
 local function parse_source(filepath)
-    local source, err = utils.read_file(filepath)
+    local all_lines = {}
+    local source, err = utils.read_file(filepath, all_lines, "/^%s$/;\"")
     if source == nil then
         print(err)
         return
@@ -115,6 +129,7 @@ local function parse_source(filepath)
     chstate.code_lines = code_lines
     chstate.line_endings = line_endings
     chstate.useless_semicolons = useless_semicolons
+    chstate.all_lines = all_lines
 
     return chstate
 end
@@ -128,7 +143,7 @@ local function deepcompare(t1,t2,ignore_mt)
     -- as well as tables which have the metamethod __eq
     if not ignore_mt then
         local mt = getmetatable(t1)
-        if mt and mt.__eq then return t1 == t2
+        if mt and mt.__eq then return t1 == t2 end
     end
     for k1,v1 in pairs(t1) do
         local v2 = t2[k1]
@@ -142,9 +157,9 @@ local function deepcompare(t1,t2,ignore_mt)
 end
 
 local function parse_tag(chstate, module_define, class_define)
-    if chstate then return false end
+    if not chstate then return false end
 
-    local lines = chstate.code_lines
+    local lines = chstate.all_lines
 
     local tags_data = {}
 
@@ -158,7 +173,7 @@ local function parse_tag(chstate, module_define, class_define)
     local is_changed = true
 
     if config.append then
-        is_changed = deepcompare(exist_tags_data[chstate.filepath], tags_data, true)
+        is_changed = not deepcompare(exist_tags_data[chstate.filepath], tags_data, true)
     end
 
     exist_tags_data[chstate.filepath] = tags_data
@@ -195,16 +210,50 @@ local function sort_tags(tagsA, tagsB)
         return tokenA < tokenB
     end
 
-    return tagsA[2] < tagsB[2]
+    local filepathA = tagsA[2]
+    local filepathB = tagsB[2]
+    if filepathA ~= filepathB then
+        return filepathA < filepathB
+    end
+
+    return tagsA[3] < tagsB[3]
+end
+
+local function is_ignore_token(token, user_ignore_token)
+    if config.ignore_token[token] then return true end
+
+    if user_ignore_token ~= nil and user_ignore_token[token] then return true end
+
+    return false
+end
+
+local function is_valid_variable_name(token)
+    return (string.match(token, "^[a-zA-Z_][a-zA-Z0-9_]*$"))
+end
+
+local function is_valid_token(token, user_ignore_token)
+    return not is_ignore_token(token, user_ignore_token)
+        and #token > config.max_var_length 
+        and is_valid_variable_name(token)
+end
+
+local function get_user_ignore_token()
+    local options = config.options
+    if options == nil then return end
+
+    return options.user_ignore_token
 end
 
 local function save_tags()
+    local user_ignore_token = get_user_ignore_token()
+
     local tags = {}
     for filepath, tags_data in pairs(exist_tags_data) do
         for token, token_data in pairs(tags_data) do
-            for line, var_type in pairs(token_data) do
-                line = string.format("/^%s$/;", line)
-                table.insert(tags, {token, filepath, line, var_type})
+            if is_valid_token(token, user_ignore_token) then
+                for line, var_type in pairs(token_data) do
+                    table.insert(tags, {token, filepath, line, var_type})
+                end
             end
         end
     end
@@ -220,7 +269,7 @@ local function save_tags()
     file_handle:close()
 end
 
-function generate_tags(args)
+function ctags.generate_tags(args)
     if not init_args(args) then
         return
     end
