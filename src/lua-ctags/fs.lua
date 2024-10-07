@@ -16,9 +16,9 @@ local function ensure_dir_sep(path)
 end
 
 function fs.fix_filepath(path)
-   if utils.is_windows then
-      return path:lower()
-   end
+   -- if utils.is_windows then
+   --    return path:lower()
+   -- end
 
    return path
 end
