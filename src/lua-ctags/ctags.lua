@@ -13,7 +13,15 @@ local config = {
     recurse = false,
     append = false,
     max_var_length = 2,
-    ignore_token = { ["_"] = true, ["_ENV"] =  true, ["_G"] = true, },
+    ignore_token = { 
+        ["_"] = true, ["_ENV"] =  true, ["_G"] = true,
+        ["false"] = true, ["true"] = true, ["local"] = true,
+        ["nil"] = true, ["end"] = true, ["if"] = true,
+        ["else"] = true, ["then"] = true, ["for"] = true,
+        ["while"] = true, ["break"] = true, ["return"] = true,
+        ["goto"] = true, ["elseif"] = true, ["do"] = true,
+        ["until"] = true, ["repeat"] = true,
+    },
 }
 
 local exist_tags_data = {}
@@ -54,47 +62,22 @@ local function init_files()
     config.files = files
 end
 
-local function fix_split_data(split_data)
-    local size = #split_data
-    if size <= 4 then return end
-
-    split_data[3] = table.concat(split_data, "\t", 3, size - 1)
-    split_data[4] = split_data[size]
-    for idx = 5, size do
-        split_data[idx] = nil
-    end
-end
-
 local function init_exist_tags()
     local tagfile = fs.abspath(config.f or "tags")
     config.tagfile = tagfile
 
+    local tag_cache_file = tagfile .. ".cache"
+    config.tag_cache_file = tag_cache_file
+
     if not config.append then return end
 
-    local file_handle = io.open(tagfile, "r")
-    if file_handle == nil then return end
+    local source = utils.read_file(tag_cache_file)
+    if source == nil then return end
 
-    for line in file_handle:lines() do
-        if not utils.startswith(line, "!") then
-            local split_data = utils.split(line, "\t")
-            fix_split_data(split_data)
-            if #split_data == 4 then
-                local token = split_data[1]
-                local filepath = split_data[2]
-                local match_line = split_data[3]
-                local token_type = split_data[4]
+    local load_func = utils.load(source, nil, "load tags")
+    if load_func == nil then return end
 
-                local tag_data = exist_tags_data[filepath] or {}
-                local token_data = tag_data[token] or {}
-                token_data[match_line] = token_type
-
-                tag_data[token] = token_data
-                exist_tags_data[filepath] = tag_data
-            end
-        end
-    end
-
-    file_handle:close()
+    exist_tags_data = load_func() or {}
 end
 
 local function init_args(args)
@@ -113,7 +96,7 @@ end
 
 local function parse_source(filepath)
     local all_lines = {}
-    local source, err = utils.read_file(filepath, all_lines, "/^%s$/;\"")
+    local source, err = utils.read_file(filepath, all_lines)
     if source == nil then
         print(err)
         return
@@ -156,12 +139,38 @@ local function deepcompare(t1,t2,ignore_mt)
     return true
 end
 
+local function is_ignore_token(token, user_ignore_token)
+    if config.ignore_token[token] then return true end
+
+    if user_ignore_token ~= nil and user_ignore_token[token] then return true end
+
+    return false
+end
+
+local function is_valid_variable_name(token)
+    return (string.match(token, "^[a-zA-Z_][a-zA-Z0-9_]*$"))
+end
+
+local function is_valid_token(token, user_ignore_token)
+    return not is_ignore_token(token, user_ignore_token)
+        and #token > config.max_var_length 
+        and is_valid_variable_name(token)
+end
+
+local function get_user_ignore_token()
+    local options = config.options
+    if options == nil then return end
+
+    return options.user_ignore_token
+end
+
 local function parse_tag(chstate, module_define, class_define)
     if not chstate then return false end
 
     local lines = chstate.all_lines
 
     local tags_data = {}
+    local tags_line_data = {}
 
     for block_index, block in ipairs(chstate.ast) do
         local ctags_parser_handle = ctags_parser[block.tag]
@@ -170,13 +179,25 @@ local function parse_tag(chstate, module_define, class_define)
         end
     end
 
+    local user_ignore_token = get_user_ignore_token()
+    local filepath = chstate.filepath
+
+    for token, token_data in pairs(tags_data) do
+        if is_valid_token(token, user_ignore_token) then
+            for line, var_type in pairs(token_data) do
+                table.insert(tags_line_data, string.format("%s\t%s\t%s\t%s", token, filepath, line, var_type))
+            end
+        end
+    end
+
     local is_changed = true
 
     if config.append then
-        is_changed = not deepcompare(exist_tags_data[chstate.filepath], tags_data, true)
+        table.sort(tags_line_data)
+        is_changed = not deepcompare(exist_tags_data[filepath], tags_line_data, true)
     end
 
-    exist_tags_data[chstate.filepath] = tags_data
+    exist_tags_data[filepath] = tags_line_data
     return is_changed
 end
 
@@ -203,70 +224,31 @@ local function parse_tags()
     return need_save
 end
 
-local function sort_tags(tagsA, tagsB)
-    local tokenA = tagsA[1]
-    local tokenB = tagsB[1]
-    if tokenA ~= tokenB then
-        return tokenA < tokenB
-    end
-
-    local filepathA = tagsA[2]
-    local filepathB = tagsB[2]
-    if filepathA ~= filepathB then
-        return filepathA < filepathB
-    end
-
-    return tagsA[3] < tagsB[3]
-end
-
-local function is_ignore_token(token, user_ignore_token)
-    if config.ignore_token[token] then return true end
-
-    if user_ignore_token ~= nil and user_ignore_token[token] then return true end
-
-    return false
-end
-
-local function is_valid_variable_name(token)
-    return (string.match(token, "^[a-zA-Z_][a-zA-Z0-9_]*$"))
-end
-
-local function is_valid_token(token, user_ignore_token)
-    return not is_ignore_token(token, user_ignore_token)
-        and #token > config.max_var_length 
-        and is_valid_variable_name(token)
-end
-
-local function get_user_ignore_token()
-    local options = config.options
-    if options == nil then return end
-
-    return options.user_ignore_token
-end
-
 local function save_tags()
-    local user_ignore_token = get_user_ignore_token()
-
     local tags = {}
-    for filepath, tags_data in pairs(exist_tags_data) do
-        for token, token_data in pairs(tags_data) do
-            if is_valid_token(token, user_ignore_token) then
-                for line, var_type in pairs(token_data) do
-                    table.insert(tags, {token, filepath, line, var_type})
-                end
-            end
+    local filepath_contents = {}
+
+    for filepath, tags_line_data in pairs(exist_tags_data) do
+        for index, tag_line in ipairs(tags_line_data) do
+            table.insert(tags, tag_line)
+            tags_line_data[index] = string.format("        \"%s\"", tag_line:gsub("\\", "\\\\"):gsub('"', '\\"'))
         end
+        table.insert(filepath_contents, string.format("    [\"%s\"] = {\n%s\n    }", string.gsub(filepath, "\\", "\\\\"), table.concat(tags_line_data, ",\n")))
     end
 
-    table.sort(tags, sort_tags)
+    table.sort(tags)
 
     local file_handle = io.open(config.tagfile, "w")
-    if file_handle == nil then return end
-
-    for _, tag in ipairs(tags) do
-        file_handle:write(string.format("%s\t%s\t%s\t%s\n", tag[1], tag[2], tag[3], tag[4]))
+    if file_handle ~= nil then
+        file_handle:write(table.concat(tags, "\n"))
+        file_handle:close()
     end
-    file_handle:close()
+
+    file_handle = io.open(config.tag_cache_file, "w")
+    if file_handle ~= nil then
+        file_handle:write(string.format("return {\n%s\n}", table.concat(filepath_contents, ",\n")))
+        file_handle:close()
+    end
 end
 
 function ctags.generate_tags(args)
