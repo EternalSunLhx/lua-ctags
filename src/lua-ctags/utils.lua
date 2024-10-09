@@ -16,7 +16,7 @@ end
 local bom = "\239\187\191"
 
 -- Returns all contents of file (path or file handler) or nil + error message.
-function utils.read_file(file, all_lines, line_fmt)
+function utils.read_file(file, all_lines)
    local handler
 
    if type(file) == "string" then
@@ -35,14 +35,10 @@ function utils.read_file(file, all_lines, line_fmt)
    if all_lines then
       local lineCount = 1
       handler:seek("set", 0)
-      for line in handler:lines() do
-         if line:sub(-1) == "\n" then
-            line = line:sub(1, -2)
-         end
-         if line_fmt then
-            line = string.format(line_fmt, line)
-         end
-         all_lines[lineCount] = line
+      while true do
+         local line = handler:read("l")
+         if line == nil then break end
+         all_lines[lineCount] = line:gsub("\r", "")
          lineCount = lineCount + 1
       end
    end
