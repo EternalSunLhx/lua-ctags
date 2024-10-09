@@ -36,9 +36,13 @@ local function get_var_type(var_value_block)
     return "v"
 end
 
+local function format_line(line)
+    return string.format("/^%s$/;\"", line)
+end
+
 local function __add_var_define(lines, tags_data, var_name, var_line, var_type)
     local token_data = tags_data[var_name] or {}
-    token_data[lines[var_line]] = var_type
+    token_data[format_line(lines[var_line])] = var_type
     tags_data[var_name] = token_data
 end
 
