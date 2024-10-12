@@ -49,12 +49,11 @@ local function init_files()
     for _, filepath in ipairs(config.files) do
         filepath = fs.abspath(filepath)
         if fs.is_file(filepath) then
-            files[filepath] = true
+            files[fs.normalize(filepath)] = true
         elseif fs.is_dir(filepath) then
             local lua_files = fs.extract_files(filepath, ".*%.lua$")
             for _, lua_filepath in ipairs(lua_files) do
-                lua_filepath = fs.fix_filepath(lua_filepath)
-                files[lua_filepath] = true
+                files[fs.normalize(lua_filepath)] = true
             end
         end
     end
@@ -68,8 +67,6 @@ local function init_exist_tags()
 
     local tag_cache_file = tagfile .. ".cache"
     config.tag_cache_file = tag_cache_file
-
-    if not config.append then return end
 
     local source = utils.read_file(tag_cache_file)
     if source == nil then return end
@@ -218,6 +215,15 @@ local function parse_tags()
         local is_changed = parse_tag(chstate, module_define, class_define)
         if not need_save then
             need_save = is_changed
+        end
+    end
+
+    if not config.append then
+        for filepath in pairs(exist_tags_data) do
+            if not config.files[filepath] then
+                need_save = true
+                exist_tags_data[filepath] = nil
+            end
         end
     end
 
