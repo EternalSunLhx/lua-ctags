@@ -211,10 +211,12 @@ local function parse_tags()
     local need_save = false
 
     for filepath in pairs(config.files) do
-        local chstate = parse_source(filepath)
-        local is_changed = parse_tag(chstate, module_define, class_define)
-        if not need_save then
-            need_save = is_changed
+        local ok, chstate = pcall(parse_source, filepath)
+        if ok then
+            local is_changed = parse_tag(chstate, module_define, class_define)
+            if not need_save then
+                need_save = is_changed
+            end
         end
     end
 
