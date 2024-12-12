@@ -69,13 +69,15 @@ ctags_parser["Set"] = function(set_block, lines, tags_data, module_define, class
     end
 end
 
-ctags_parser["Local"] = function(local_block, lines, tags_data, module_define, class_define)
+ctags_parser["Local"] = function(local_block, lines, tags_data, module_define, class_define, is_root)
     local value_define_block = local_block[2] or empty_table
     
     for index, var_block in ipairs(local_block[1]) do
         local value_block = value_define_block[index]
 
-        add_var_define(lines, tags_data, var_block, value_block)
+        if is_root then
+            add_var_define(lines, tags_data, var_block, value_block)
+        end
 
         if value_block ~= nil and (value_block.tag == "Call" or value_block.tag == "Table") then
             ctags_parser[value_block.tag](value_block, lines, tags_data, module_define, class_define)
