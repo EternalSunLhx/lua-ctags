@@ -22,6 +22,7 @@ local config = {
         ["goto"] = true, ["elseif"] = true, ["do"] = true,
         ["until"] = true, ["repeat"] = true,
     },
+    exclude = {},
 }
 
 local function init_options()
@@ -42,18 +43,37 @@ local function init_options()
     config.options = options
 end
 
+local function is_file_exclude(filepath)
+    for _, pattern in pairs(config.exclude) do
+        if filepath:match(pattern) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function scan_files(files, filepath)
+    if is_file_exclude(filepath) then return end
+
+    if fs.is_file(filepath) then
+        files[fs.normalize(filepath)] = true
+        return
+    end
+    
+    if fs.is_dir(filepath) then
+        local lua_files = fs.extract_files(filepath, ".*%.lua$", is_file_exclude)
+        for _, lua_filepath in ipairs(lua_files) do
+            files[fs.normalize(lua_filepath)] = true
+        end
+    end
+end
+
 local function init_files()
     local files = {}
     for _, filepath in ipairs(config.files) do
         filepath = fs.abspath(filepath)
-        if fs.is_file(filepath) then
-            files[fs.normalize(filepath)] = true
-        elseif fs.is_dir(filepath) then
-            local lua_files = fs.extract_files(filepath, ".*%.lua$")
-            for _, lua_filepath in ipairs(lua_files) do
-                files[fs.normalize(lua_filepath)] = true
-            end
-        end
+        scan_files(files, filepath)
     end
 
     config.files = files
@@ -61,6 +81,11 @@ end
 
 local function init_args(args)
     utils.update(config, args)
+
+    for idx, pattern in pairs(config.exclude) do
+        config.exclude[idx] = pattern:gsub("%.", "%%."):gsub("%*", ".*")
+    end
+
     init_options()
     init_files()
 
