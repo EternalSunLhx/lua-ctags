@@ -186,7 +186,7 @@ end
 -- Returns list of all files in directory matching pattern.
 -- Additionally returns a mapping from directory paths that couldn't be expanded
 -- to error messages.
-function fs.extract_files(dir_path, pattern)
+function fs.extract_files(dir_path, pattern, exclude_handle)
    local res = {}
    local err_map = {}
 
@@ -206,7 +206,9 @@ function fs.extract_files(dir_path, pattern)
             if fs.is_dir(full_path) then
                scan(full_path)
             elseif path:match(pattern) and fs.is_file(full_path) then
-               table.insert(res, full_path)
+               if not exclude_handle or not exclude_handle(full_path) then
+                  table.insert(res, full_path)
+               end
             end
          end
       end
