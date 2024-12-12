@@ -24,8 +24,6 @@ local config = {
     },
 }
 
-local exist_tags_data = {}
-
 local function init_options()
     local options_file = config.options
     if options_file == nil then return end
@@ -61,22 +59,6 @@ local function init_files()
     config.files = files
 end
 
-local function init_exist_tags()
-    local tagfile = fs.abspath(config.f or "tags")
-    config.tagfile = tagfile
-
-    local tag_cache_file = tagfile .. ".cache"
-    config.tag_cache_file = tag_cache_file
-
-    local source = utils.read_file(tag_cache_file)
-    if source == nil then return end
-
-    local load_func = utils.load(source, nil, "load tags")
-    if load_func == nil then return end
-
-    exist_tags_data = load_func() or {}
-end
-
 local function init_args(args)
     utils.update(config, args)
     init_options()
@@ -87,7 +69,7 @@ local function init_args(args)
         return false
     end
 
-    init_exist_tags()
+    config.tagfile = fs.abspath(config.f or "tags")
     return true
 end
 
@@ -161,6 +143,8 @@ local function get_user_ignore_token()
     return options.user_ignore_token
 end
 
+local tag_line_format = { 1, 2, 3, 4 }
+
 local function parse_tag(chstate, module_define, class_define)
     if not chstate then return false end
 
@@ -172,7 +156,7 @@ local function parse_tag(chstate, module_define, class_define)
     for block_index, block in ipairs(chstate.ast) do
         local ctags_parser_handle = ctags_parser[block.tag]
         if ctags_parser_handle ~= nil then
-            ctags_parser_handle(block, lines, tags_data, module_define, class_define)
+            ctags_parser_handle(block, lines, tags_data, module_define, class_define, true)
         end
     end
 
@@ -182,20 +166,16 @@ local function parse_tag(chstate, module_define, class_define)
     for token, token_data in pairs(tags_data) do
         if is_valid_token(token, user_ignore_token) then
             for line, var_type in pairs(token_data) do
-                table.insert(tags_line_data, string.format("%s\t%s\t%s\t%s", token, filepath, line, var_type))
+                tag_line_format[1] = token
+                tag_line_format[2] = filepath
+                tag_line_format[3] = line
+                tag_line_format[4] = var_type
+                table.insert(tags_line_data, table.concat(tag_line_format, "\t"))
             end
         end
     end
 
-    local is_changed = true
-
-    if config.append then
-        table.sort(tags_line_data)
-        is_changed = not deepcompare(exist_tags_data[filepath], tags_line_data, true)
-    end
-
-    exist_tags_data[filepath] = tags_line_data
-    return is_changed
+    return table.concat(tags_line_data, "\n")
 end
 
 local function get_options_define()
@@ -209,52 +189,55 @@ local function parse_tags()
     local module_define, class_define = get_options_define()
 
     local need_save = false
+    local new_tags = {}
 
     for filepath in pairs(config.files) do
         local ok, chstate = pcall(parse_source, filepath)
         if ok then
-            local is_changed = parse_tag(chstate, module_define, class_define)
-            if not need_save then
-                need_save = is_changed
-            end
+            new_tags[filepath] = parse_tag(chstate, module_define, class_define)
         end
     end
 
-    if not config.append then
-        for filepath in pairs(exist_tags_data) do
-            if not config.files[filepath] then
-                need_save = true
-                exist_tags_data[filepath] = nil
-            end
-        end
-    end
-
-    return need_save
+    return new_tags
 end
 
-local function save_tags()
+local function try_get_current_tag_content()
+    if not config.append then return end
+
+    local file_handle = io.open(config.tagfile, "r")
+    if file_handle == nil then return end
+
+    local sContent = file_handle:read("*all")
+    file_handle:close()
+
+    if #sContent == 0 then return end
+    return sContent
+end
+
+local function save_tags(new_tags)
     local tags = {}
     local filepath_contents = {}
 
-    for filepath, tags_line_data in pairs(exist_tags_data) do
-        for index, tag_line in ipairs(tags_line_data) do
-            table.insert(tags, tag_line)
-            tags_line_data[index] = string.format("        \"%s\"", tag_line:gsub("\\", "\\\\"):gsub('"', '\\"'))
-        end
-        table.insert(filepath_contents, string.format("    [\"%s\"] = {\n%s\n    }", string.gsub(filepath, "\\", "\\\\"), table.concat(tags_line_data, ",\n")))
-    end
+    local new_contents = {}
 
-    table.sort(tags)
+    local sCurrentTagContent = try_get_current_tag_content()
+
+    for filepath, tag_content in pairs(new_tags) do
+        if sCurrentTagContent then
+            local sPattern = "[%d%a_]+\t" .. filepath .. "\t.-\t.-\t[fvmc]+[\r\n]+"
+            sCurrentTagContent = string.gsub(sCurrentTagContent, sPattern, "")
+        end
+        table.insert(new_contents, tag_content)
+    end
 
     local file_handle = io.open(config.tagfile, "w")
     if file_handle ~= nil then
-        file_handle:write(table.concat(tags, "\n"))
-        file_handle:close()
-    end
+        if sCurrentTagContent then
+            file_handle:write(sCurrentTagContent)
+        end
 
-    file_handle = io.open(config.tag_cache_file, "w")
-    if file_handle ~= nil then
-        file_handle:write(string.format("return {\n%s\n}", table.concat(filepath_contents, ",\n")))
+        file_handle:write(table.concat(new_contents, "\n"))
+        file_handle:write("\n")
         file_handle:close()
     end
 end
@@ -264,10 +247,7 @@ function ctags.generate_tags(args)
         return
     end
 
-    local need_save = parse_tags()
-    if need_save then
-        save_tags()
-    end
+    save_tags(parse_tags())
 end
 
 return ctags
