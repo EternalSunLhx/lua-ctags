@@ -27,6 +27,12 @@ Links:
       :argname "<file>"
 
    parser:group("Input/Output Options",
+      parser:option("--exclude", "Exclude files and directories matching <pattern>.")
+         :args "+"
+         :count "*"
+         :argname "<glob>"
+         :action "concat"
+         :init(nil),
       parser:flag("-R --recurse", "Recurse into directories supplied on command line [no]."),
       parser:flag("-a --append", "Should tags should be appended to existing tag file [no]?"),
       
